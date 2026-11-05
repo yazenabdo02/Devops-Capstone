@@ -1,0 +1,62 @@
+services:
+  auth-service:
+    build: ./services/auth-service
+    environment:
+      SHARED_SECRET: ${SHARED_SECRET}
+      AUTH_DB_PATH: /data/users.db
+      CORS_ALLOWED_ORIGIN: http://localhost:8080
+    volumes:
+      - auth-data:/data
+    networks: [app]
+
+  catalog-service:
+    build: ./services/catalog-service
+    environment:
+      SHARED_SECRET: ${SHARED_SECRET}
+      CATALOG_DB_PATH: /data/catalog.db
+      CORS_ALLOWED_ORIGIN: http://localhost:8080
+    volumes:
+      - catalog-data:/data
+    networks: [app]
+
+  orders-service:
+    build: ./services/orders-service
+    environment:
+      SHARED_SECRET: ${SHARED_SECRET}
+      ORDERS_DB_PATH: /data/orders.db
+      CATALOG_SERVICE_URL: http://catalog-service:5002
+      CORS_ALLOWED_ORIGIN: http://localhost:8080
+    volumes:
+      - orders-data:/data
+    depends_on:
+      - catalog-service
+    networks: [app]
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - auth-service
+      - catalog-service
+      - orders-service
+    networks: [app]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: marketly
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks: [app]
+
+volumes:
+  auth-data:
+  catalog-data:
+  orders-data:
+  pg-data:
+
+networks:
+  app:
