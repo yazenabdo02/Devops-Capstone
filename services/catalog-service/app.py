@@ -16,11 +16,12 @@ Run standalone:
 Listens on :5002
 """
 import os
-import sqlite3
 import math
 
 import jwt
 from flask import Flask, jsonify, request
+
+from db import connect, USING_PG, PK
 
 app = Flask(__name__)
 
@@ -73,20 +74,18 @@ def cors_preflight(_unused=None):
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect(DB_PATH)
 
 
 def init_db():
     conn = get_db()
     conn.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS products (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {PK},
             name TEXT NOT NULL,
             description TEXT,
-            price REAL NOT NULL,
+            price DOUBLE PRECISION NOT NULL,
             stock INTEGER NOT NULL DEFAULT 0,
             category TEXT NOT NULL DEFAULT 'General',
             image_url TEXT DEFAULT ''
@@ -94,7 +93,7 @@ def init_db():
         """
     )
     # Backfill columns for anyone upgrading from the old schema.
-    existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(products)")}
+    existing_cols = {"category", "image_url"} if USING_PG else {row["name"] for row in conn.execute("PRAGMA table_info(products)")}
     if "category" not in existing_cols:
         conn.execute("ALTER TABLE products ADD COLUMN category TEXT NOT NULL DEFAULT 'General'")
     if "image_url" not in existing_cols:
@@ -167,7 +166,7 @@ def list_products():
     where = []
     params = []
     if q:
-        where.append("(name LIKE ? OR description LIKE ?)")
+        where.append("(LOWER(name) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?))")
         params += [f"%{q}%", f"%{q}%"]
     if category:
         where.append("category = ?")
@@ -217,7 +216,7 @@ def create_product():
 
     conn = get_db()
     cur = conn.execute(
-        "INSERT INTO products (name, description, price, stock, category, image_url) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO products (name, description, price, stock, category, image_url) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
         (
             name,
             data.get("description", ""),
@@ -227,8 +226,8 @@ def create_product():
             data.get("image_url", ""),
         ),
     )
+    new_id = cur.fetchone()["id"]
     conn.commit()
-    new_id = cur.lastrowid
     row = conn.execute("SELECT * FROM products WHERE id = ?", (new_id,)).fetchone()
     conn.close()
     return jsonify(row_to_dict(row)), 201

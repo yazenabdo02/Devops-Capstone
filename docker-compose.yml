@@ -13,10 +13,11 @@ services:
     build: ./services/catalog-service
     environment:
       SHARED_SECRET: ${SHARED_SECRET}
-      CATALOG_DB_PATH: /data/catalog.db
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/marketly
       CORS_ALLOWED_ORIGIN: http://localhost:8080
-    volumes:
-      - catalog-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [app]
 
   orders-service:
@@ -50,11 +51,15 @@ services:
       POSTGRES_DB: marketly
     volumes:
       - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d marketly"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
     networks: [app]
 
 volumes:
   auth-data:
-  catalog-data:
   orders-data:
   pg-data:
 
