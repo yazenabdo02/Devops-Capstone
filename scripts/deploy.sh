@@ -29,6 +29,15 @@ for i in $(seq 1 60); do
 done
 ok "k3s API is up"
 
+log "Waiting for the worker nodes to join the cluster"
+for i in $(seq 1 60); do
+  ready=$(ssm_run "$CP" "$K get nodes --no-headers | grep -c ' Ready '" 2>/dev/null | tr -d '[:space:]' || true)
+  if [ "${ready:-0}" -ge 3 ] 2>/dev/null; then break; fi
+  [ "$i" -lt 60 ] || die "the worker nodes did not join in time"
+  sleep 10
+done
+ok "all 3 nodes are Ready"
+
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
   log "Building and pushing images (tag $SHA)"
   aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REG" >/dev/null
