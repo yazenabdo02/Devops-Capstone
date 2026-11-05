@@ -4,6 +4,7 @@
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="$ROOT/terraform"
 REGION="${AWS_REGION:-eu-north-1}"
+export PYTHONUTF8=1
 # shellcheck disable=SC2034  # used by the scripts that source this file
 K="/usr/local/bin/k3s kubectl"
 

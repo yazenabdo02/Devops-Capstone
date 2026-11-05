@@ -62,7 +62,7 @@ ok "ecr-pull applied"
 log "Applying the manifests from the pushed repository"
 REPO_URL=$(git config --get remote.origin.url)
 REPO_URL=${REPO_URL/git@github.com:/https://github.com/}
-ssm_run "$CP" "command -v git >/dev/null || dnf install -y git; rm -rf /opt/capstone; git clone -q $REPO_URL /opt/capstone && cd /opt/capstone && $K apply -k k8s && $K apply -f k8s/hpa.yaml" >/dev/null \
+ssm_run "$CP" "command -v git >/dev/null || dnf install -y git; rm -rf /opt/capstone; git clone -q $REPO_URL /opt/capstone && cd /opt/capstone && $K apply -k k8s" >/dev/null \
   || die "could not apply the manifests (is the latest commit pushed to $REPO_URL?)"
 
 log "Rolling out the new images"
@@ -72,5 +72,44 @@ for d in $SERVICES; do
     || die "rollout of $d failed"
   ok "$d rolled out"
 done
+
+log "Applying the HPA (after the first replicas have created their tables)"
+ssm_run "$CP" "cd /opt/capstone && $K apply -f k8s/hpa.yaml" >/dev/null
+ok "HPA applied"
+
+# The self-hosted runner lives on the control-plane, so every rebuild needs a new one.
+# Token source: RUNNER_TOKEN, or the GitHub CLI when it is logged in.
+REPO_SLUG=${REPO_URL#https://github.com/}
+REPO_SLUG=${REPO_SLUG%.git}
+TOKEN="${RUNNER_TOKEN:-}"
+if [ -z "$TOKEN" ] && command -v gh >/dev/null 2>&1; then
+  TOKEN=$(gh api -X POST "repos/$REPO_SLUG/actions/runners/registration-token" --jq .token 2>/dev/null | tr -d '\r') || TOKEN=""
+fi
+if [ -n "$TOKEN" ]; then
+  log "Registering the self-hosted GitHub runner on the control-plane"
+  read -r -d '' RUNNER_SCRIPT <<'EOS' || true
+set -e
+dnf install -y libicu tar gzip >/dev/null
+id runner >/dev/null 2>&1 || useradd -m runner
+mkdir -p /opt/actions-runner
+cd /opt/actions-runner
+if [ ! -f config.sh ]; then
+  VER=$(curl -s https://api.github.com/repos/actions/runner/releases/latest | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+  curl -sL -o runner.tgz "https://github.com/actions/runner/releases/download/v${VER}/actions-runner-linux-x64-${VER}.tar.gz"
+  tar xzf runner.tgz
+fi
+chown -R runner:runner /opt/actions-runner
+sudo -H -u runner ./config.sh --unattended --replace --url __URL__ --token __TOKEN__ --name capstone-control-plane --labels k3s >/dev/null
+./svc.sh install runner >/dev/null
+./svc.sh start >/dev/null
+EOS
+  RUNNER_SCRIPT=${RUNNER_SCRIPT//__URL__/https://github.com/$REPO_SLUG}
+  RUNNER_SCRIPT=${RUNNER_SCRIPT//__TOKEN__/$TOKEN}
+  B64=$(printf '%s\n' "$RUNNER_SCRIPT" | base64 | tr -d '\n')
+  ssm_run "$CP" "echo $B64 | base64 -d | bash" >/dev/null || die "runner registration failed (token expired?)"
+  ok "runner registered (label k3s)"
+else
+  warn "no RUNNER_TOKEN and the GitHub CLI is not logged in: deploy.yml waits until you register a runner (Settings > Actions > Runners, label k3s)"
+fi
 
 ok "Deployed. App URL: http://$(tf_out alb_dns_name)"
