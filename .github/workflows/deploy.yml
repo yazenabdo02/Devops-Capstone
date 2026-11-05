@@ -1,0 +1,63 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-north-1
+  REGISTRY: 714370816085.dkr.ecr.eu-north-1.amazonaws.com
+  KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: [self-hosted, k3s]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Refresh the ECR pull secret
+        run: |
+          PW=$(aws ecr get-login-password --region "$AWS_REGION")
+          kubectl -n marketly create secret docker-registry ecr-pull \
+            --docker-server="$REGISTRY" --docker-username=AWS --docker-password="$PW" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply manifests
+        run: |
+          kubectl apply -k k8s
+          kubectl apply -f k8s/hpa.yaml
+
+      - name: Point the deployments at the new images
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          TAG="${SHA::7}"
+          for svc in auth-service catalog-service orders-service frontend; do
+            if aws ecr describe-images --region "$AWS_REGION" --repository-name "capstone/$svc" --image-ids imageTag="$TAG" >/dev/null 2>&1; then
+              kubectl -n marketly set image "deployment/$svc" "$svc=$REGISTRY/capstone/$svc:$TAG"
+            else
+              echo "tag $TAG not in ECR for $svc, restarting with :latest"
+              kubectl -n marketly rollout restart "deployment/$svc"
+            fi
+          done
+
+      - name: Verify the rollout of all 4 components
+        run: |
+          for d in auth-service catalog-service orders-service frontend; do
+            kubectl -n marketly rollout status "deployment/$d" --timeout=180s
+          done
+
+      - name: Show the result
+        run: kubectl -n marketly get pods -o wide
