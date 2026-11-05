@@ -30,3 +30,32 @@ module "ecr" {
 
   project_name = var.project_name
 }
+
+module "ec2_cluster" {
+  source = "./modules/ec2-cluster"
+
+  project_name       = var.project_name
+  private_subnet_ids = module.vpc.private_subnet_ids
+  k3s_sg_id          = module.security_groups.k3s_sg_id
+
+  # The nodes need the NAT route to download k3s on first boot.
+  depends_on = [module.nat_instance]
+}
+
+module "rds" {
+  source = "./modules/rds"
+
+  project_name       = var.project_name
+  private_subnet_ids = module.vpc.private_subnet_ids
+  rds_sg_id          = module.security_groups.rds_sg_id
+}
+
+module "alb" {
+  source = "./modules/alb"
+
+  project_name      = var.project_name
+  vpc_id            = module.vpc.vpc_id
+  public_subnet_ids = module.vpc.public_subnet_ids
+  alb_sg_id         = module.security_groups.alb_sg_id
+  asg_name          = module.ec2_cluster.asg_name
+}
