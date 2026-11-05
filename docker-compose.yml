@@ -25,13 +25,14 @@ services:
     build: ./services/orders-service
     environment:
       SHARED_SECRET: ${SHARED_SECRET}
-      ORDERS_DB_PATH: /data/orders.db
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/marketly
       CATALOG_SERVICE_URL: http://catalog-service:5002
       CORS_ALLOWED_ORIGIN: http://localhost:8080
-    volumes:
-      - orders-data:/data
     depends_on:
-      - catalog-service
+      postgres:
+        condition: service_healthy
+      catalog-service:
+        condition: service_started
     networks: [app]
 
   frontend:
@@ -60,7 +61,6 @@ services:
     networks: [app]
 
 volumes:
-  orders-data:
   pg-data:
 
 networks:

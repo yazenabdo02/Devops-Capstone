@@ -16,13 +16,14 @@ Run standalone:
 Listens on :5003. Requires catalog-service running (default http://localhost:5002).
 """
 import os
-import sqlite3
 import datetime
 import json
 
 import jwt
 import requests
 from flask import Flask, jsonify, request
+
+from db import connect, USING_PG, PK
 
 app = Flask(__name__)
 
@@ -57,27 +58,25 @@ def cors_preflight(_unused=None):
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect(DB_PATH)
 
 
 def init_db():
     conn = get_db()
     conn.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS orders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {PK},
             username TEXT NOT NULL,
             items_json TEXT NOT NULL,
-            total REAL NOT NULL,
+            total DOUBLE PRECISION NOT NULL,
             status TEXT NOT NULL DEFAULT 'pending',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
         """
     )
-    existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
+    existing_cols = {"status", "updated_at"} if USING_PG else {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
     if "status" not in existing_cols:
         conn.execute("ALTER TABLE orders ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'")
     if "updated_at" not in existing_cols:
@@ -199,11 +198,12 @@ def create_order():
     now = datetime.datetime.utcnow().isoformat()
     conn = get_db()
     cur = conn.execute(
-        "INSERT INTO orders (username, items_json, total, status, created_at, updated_at) VALUES (?, ?, ?, 'pending', ?, ?)",
+        "INSERT INTO orders (username, items_json, total, status, created_at, updated_at) VALUES (?, ?, ?, 'pending', ?, ?) RETURNING id",
         (username, json.dumps(order_items), total, now, now),
     )
+    new_id = cur.fetchone()["id"]
     conn.commit()
-    row = conn.execute("SELECT * FROM orders WHERE id = ?", (cur.lastrowid,)).fetchone()
+    row = conn.execute("SELECT * FROM orders WHERE id = ?", (new_id,)).fetchone()
     conn.close()
 
     return jsonify(order_to_dict(row)), 201
