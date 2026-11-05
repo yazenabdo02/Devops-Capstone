@@ -30,3 +30,11 @@ output "db_password" {
   value     = module.rds.password
   sensitive = true
 }
+
+output "ci_role_arn" {
+  value = one(module.iam_oidc[*].ci_role_arn)
+}
+
+output "terraform_role_arn" {
+  value = one(module.iam_oidc[*].terraform_role_arn)
+}

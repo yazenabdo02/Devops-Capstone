@@ -59,3 +59,13 @@ module "alb" {
   alb_sg_id         = module.security_groups.alb_sg_id
   asg_name          = module.ec2_cluster.asg_name
 }
+
+module "iam_oidc" {
+  count  = var.enable_oidc ? 1 : 0
+  source = "./modules/iam-oidc"
+
+  project_name = var.project_name
+  github_repo  = var.github_repo
+  state_bucket = var.state_bucket
+  lock_table   = var.lock_table
+}
