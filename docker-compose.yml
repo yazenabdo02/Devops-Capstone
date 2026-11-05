@@ -3,10 +3,11 @@ services:
     build: ./services/auth-service
     environment:
       SHARED_SECRET: ${SHARED_SECRET}
-      AUTH_DB_PATH: /data/users.db
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/marketly
       CORS_ALLOWED_ORIGIN: http://localhost:8080
-    volumes:
-      - auth-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [app]
 
   catalog-service:
@@ -59,7 +60,6 @@ services:
     networks: [app]
 
 volumes:
-  auth-data:
   orders-data:
   pg-data:
 

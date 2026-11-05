@@ -25,7 +25,6 @@ Listens on :5001
 """
 import os
 import re
-import sqlite3
 import secrets
 import hashlib
 import datetime
@@ -33,6 +32,8 @@ import datetime
 import jwt
 from flask import Flask, jsonify, request, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
+
+from db import connect, PK
 
 app = Flask(__name__)
 
@@ -148,17 +149,15 @@ def cors_preflight(_unused):
 # --- DB ---
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect(DB_PATH)
 
 
 def init_db():
     conn = get_db()
     conn.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {PK},
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             email TEXT,
@@ -170,9 +169,9 @@ def init_db():
         """
     )
     conn.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS refresh_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id {PK},
             user_id INTEGER NOT NULL,
             token_hash TEXT UNIQUE NOT NULL,
             created_at TEXT NOT NULL,
