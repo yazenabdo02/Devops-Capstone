@@ -50,6 +50,11 @@ resource "aws_db_instance" "this" {
   deletion_protection     = false
   apply_immediately       = true
 
+  timeouts {
+    create = "40m"
+    delete = "40m"
+  }
+
   tags = {
     Name = "${var.project_name}-postgres"
   }
