@@ -20,7 +20,8 @@ if [ "$total" -ge 1 ] && [ "$notready" -eq 0 ]; then ok "$total node(s) Ready"; 
 log "Pods in namespace marketly"
 pods=$(ssm_run "$CP" "$K -n marketly get pods --no-headers") || die "cannot list pods"
 echo "$pods"
-bad=$(echo "$pods" | grep -vc ' Running ' || true)
+# Pods that are shutting down during a rollout are expected, not a failure.
+bad=$(echo "$pods" | grep -v ' Terminating ' | grep -vc ' Running ' || true)
 if [ "$bad" -eq 0 ]; then ok "all pods Running"; else warn "$bad pod(s) not Running"; fail=1; fi
 
 log "Backend /health endpoints (through the ClusterIP services)"
