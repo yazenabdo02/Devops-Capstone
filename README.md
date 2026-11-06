@@ -406,3 +406,23 @@ The application URL changes after every rebuild: `terraform -chdir=terraform out
 After a rebuild the self-hosted runner has to be registered again on the new
 control-plane, with a fresh token from Settings > Actions > Runners.
 The ECR pull token expires after 12 hours, so `deploy.yml` refreshes it on every deploy.
+
+
+## 11. Running it yourself
+
+### Locally with Docker Compose (no AWS needed)
+
+```bash
+cp .env.example .env          # required: without it PostgreSQL has no user or password and exits
+docker compose up -d --build
+# open http://localhost:8080  (demo / demo1234)
+docker compose down -v
+```
+
+### On AWS with another account
+
+The Terraform state lives in an S3 bucket and a DynamoDB lock table that are created by hand once, because Terraform needs them before its first `init`. The bucket name in `terraform/backend.tf` belongs to the author's account, so in a different account create your own bucket and edit that file. The DynamoDB table needs the key `LockID` (string). Then run `bash scripts/deploy.sh`. Set `RUNNER_TOKEN` first (Settings > Actions > Runners > New self-hosted runner) if you want the deploy workflow to have a runner.
+
+### Security group notes
+
+Only `alb-sg` accepts traffic from the internet. The outbound rules of `k3s-sg` and `nat-sg` are open on purpose: the nodes reach ECR, SSM and GitHub through the NAT instance, and the NAT instance forwards that traffic. Inbound rules of every other group are limited to the group before it.
